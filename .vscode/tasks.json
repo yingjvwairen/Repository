@@ -23,7 +23,7 @@
 				"reveal": "always",
 				"focus": false,
 				"panel": "new",
-				"showReuseMessage": true,
+				"showReuseMessage": false,
 				"clear": false
 			}
 		},
