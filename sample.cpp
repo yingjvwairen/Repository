@@ -1,245 +1,234 @@
+// functions to convert from type K to nonnegative integer
+// derived from similar classes in SGI STL
+
 #include <iostream>
-#include <float.h>
-#include <iomanip>
+#include <string>
 
 using namespace std;
 
-// change the length of an array
+template <class K>
+class Hash;
 
-template <class T>
-void changeLength1D(T *&a, int oldLength, int newLength)
-{
-    if (newLength < 0)
-    {
-        return;
-    }
-    T *temp = new T[newLength];             // new array
-    int number = min(oldLength, newLength); // number to copy
-    copy(a, a + number, temp);
-    delete[] a; // deallocate old memory
-    a = temp;
-}
-
-template <class T>
-class arrayStack
+template <>
+class Hash<string>
 {
 public:
-    arrayStack(int initialCapacity = 10);
-    ~arrayStack() { delete[] stack; }
-    bool empty() const { return stackTop == -1; }
-    int size() const
-    {
-        return stackTop + 1;
-    }
-    T &top()
-    {
-        if (stackTop == -1)
-            exit(0);
+    size_t operator()(const string theKey) const
+    { // Convert theKey to a nonnegative integer.
+        unsigned long HashValue = 0;
+        int length = (int)theKey.length();
+        for (int i = 0; i < length; i++)
+            HashValue = 5 * HashValue + theKey.at(i);
 
-        return stack[stackTop];
+        return size_t(HashValue);
     }
-    void pop()
-    {
-        if (stackTop == -1)
-            return;
-
-        stack[stackTop--].~T(); // destructor for T
-    }
-    void push(const T &theElement);
-
-private:
-    int stackTop;    // current top of stack
-    int arrayLength; // stack capacity
-    T *stack;        // element array
 };
 
-template <class T>
-arrayStack<T>::arrayStack(int initialCapacity)
-{ // Constructor.
-    if (initialCapacity < 1)
+template <>
+class Hash<int>
+{
+public:
+    size_t operator()(const int theKey) const
+    {
+        return size_t(theKey);
+    }
+};
+
+template <>
+class Hash<long>
+{
+public:
+    size_t operator()(const long theKey) const
+    {
+        return size_t(theKey);
+    }
+};
+
+// Hash table using linear open addressing and division
+
+// mapping functions from K to nonnegative integer
+
+template <class K, class E>
+class HashTable
+{
+public:
+    HashTable(int theDivisor = 11);
+    ~HashTable() { delete[] table; }
+
+    bool empty() const { return dSize == 0; }
+    int size() const { return dSize; }
+    pair<const K, E> *find(const K &) const;
+    void insert(const pair<const K, E> &);
+    void erase(const K &);
+    void output(ostream &out) const;
+
+protected:
+    int search(const K &) const;
+    pair<const K, E> **table; // Hash table
+    Hash<K> HashMap;          // maps type K to nonnegative integer
+    int dSize;                // number of pairs in dictionary
+    int divisor;              // Hash function divisor
+};
+
+template <class K, class E>
+HashTable<K, E>::HashTable(int theDivisor)
+{
+    divisor = theDivisor;
+    dSize = 0;
+
+    // allocate and initialize Hash table array
+    table = new pair<const K, E> *[divisor];
+    for (int i = 0; i < divisor; i++)
+        table[i] = NULL;
+}
+
+template <class K, class E>
+int HashTable<K, E>::search(const K &theKey) const
+{ // Search an open addressed Hash table for a pair with key theKey.
+    // Return location of matching pair if found, otherwise return
+    // location where a pair with key theKey may be inserted
+    // provided the Hash table is not full.
+
+    int i = (int)HashMap(theKey) % divisor; // home bucket
+    int j = i;                              // start at home bucket
+    do
+    {
+        if (table[j] == NULL || table[j]->first == theKey)
+            return j;
+        j = (j + 1) % divisor; // next bucket
+    } while (j != i);          // returned to home bucket?
+
+    return j; // table full
+}
+
+template <class K, class E>
+pair<const K, E> *HashTable<K, E>::find(const K &theKey) const
+{ // Return pointer to matching pair.
+    // Return NULL if no matching pair.
+    // search the table
+    int b = search(theKey);
+
+    // see if a match was found at table[b]
+    if (table[b] == NULL || table[b]->first != theKey)
+    {
+        cout << -1 << endl;
+        return NULL;
+    } // no match
+    cout << b << endl;
+    return table[b]; // matching pair
+}
+
+template <class K, class E>
+void HashTable<K, E>::insert(const pair<const K, E> &thePair)
+{ // Insert thePair into the dictionary. Overwrite existing
+    // pair, if any, with same key.
+    // Throw HashTableFull exception in case table is full.
+    // search the table for a matching pair
+    int b = search(thePair.first);
+
+    // check if matching pair found
+    if (table[b] == NULL)
+    {
+        // no matching pair and table not full
+        table[b] = new pair<const K, E>(thePair);
+        dSize++;
+        cout << b << endl;
+    }
+    else
+    { // check if duplicate or table full
+        if (table[b]->first == thePair.first)
+        { // duplicate, change table[b]->second
+            cout << "Existed" << endl;
+        }
+        else // table is full
+            cout << "HashTableFull" << endl;
+    }
+}
+
+template <class K, class E>
+void HashTable<K, E>::erase(const K &theKey)
+{
+    int b = search(theKey);
+
+    if (table[b] == NULL)
+    {
+        cout << "Not Found" << endl;
         return;
-
-    arrayLength = initialCapacity;
-    stack = new T[arrayLength];
-    stackTop = -1;
-}
-
-template <class T>
-void arrayStack<T>::push(const T &theElement)
-{ // Add theElement to stack.
-    if (stackTop == arrayLength - 1)
-    { // no space, double capacity
-        changeLength1D(stack, arrayLength, 2 * arrayLength);
-        arrayLength *= 2;
     }
 
-    // add at stack top
-    stack[++stackTop] = theElement;
+    delete table[b]; //table[b]->~pair();
+    table[b] = NULL;
+    int gap = b;
+    b++;
+    b = b % divisor;
+
+    int count = 0;
+    while (table[b] != NULL)
+        if ((gap < b && gap < ((int)HashMap(table[b]->first) % divisor) && ((int)HashMap(table[b]->first) % divisor) <= b) || (gap > b && gap < ((int)HashMap(table[b]->first) % divisor) && ((int)HashMap(table[b]->first) % divisor) <= divisor - 1) || (gap > b && 0 <= ((int)HashMap(table[b]->first) % divisor) && ((int)HashMap(table[b]->first) % divisor) <= b))
+        {
+            b++;
+            b = b % divisor;
+        }
+        else
+        {
+            table[gap] = table[b];
+            table[b] = NULL;
+            gap = b;
+            b++;
+            b = b % divisor;
+
+            count++;
+        }
+
+    cout << count << endl;
+
+    dSize--;
 }
 
-double long mask(double const long &d)
-{
-    return d * DBL_MAX;
+template <class K, class E>
+void HashTable<K, E>::output(ostream &out) const
+{ // Insert the Hash table into the stream out.
+    for (int i = 0; i < divisor; i++)
+        if (table[i] == NULL)
+            cout << "NULL" << endl;
+        else
+            cout << table[i]->first << " "
+                 << table[i]->second << endl;
 }
 
-double long calculate(double long c[])
+// overload <<
+template <class K, class E>
+ostream &operator<<(ostream &out, const HashTable<K, E> &x)
 {
-    double long result = c[0] - '0', t = c[0] - '0';
-
-    for (int i = 1; c[i] != mask('\n');)
-    {
-        if (c[i] == mask(' '))
-        {
-            i++;
-            continue;
-        }
-
-        if (c[i] == mask('+'))
-        {
-            while (c[++i] != mask('+') && c[i] != mask('-') && c[i] != mask('\n'))
-            {
-                if (c[i] == mask(' '))
-                    continue;
-
-                if (c[i] == mask('/'))
-                {
-                    t = t / (c[++i] - '0');
-                    continue;
-                }
-                if (c[i] == mask('*'))
-                {
-                    t = t * (c[++i] - '0');
-                    continue;
-                }
-                t = c[i] - '0';
-            }
-            result = result + t;
-            continue;
-        }
-        if (c[i] == mask('-'))
-        {
-            while (c[++i] != mask('+') && c[i] != mask('-') && c[i] != mask('\n'))
-            {
-                if (c[i] == mask(' '))
-                    continue;
-
-                if (c[i] == mask('/'))
-                {
-                    t = t / (c[++i] - '0');
-                    continue;
-                }
-                if (c[i] == mask('*'))
-                {
-                    t = t * (c[++i] - '0');
-                    continue;
-                }
-                t = c[i] - '0';
-            }
-            result = result - t;
-            continue;
-        }
-        while (c[i] != mask('+') && c[i] != mask('-') && c[i] != mask('\n'))
-        {
-            if (c[i] == mask(' '))
-            {
-                i++;
-                continue;
-            }
-
-            if (c[i] == mask('/'))
-            {
-                t = t / (c[++i] - '0');
-                i++;
-                continue;
-            }
-            if (c[i] == mask('*'))
-            {
-                t = t * (c[++i] - '0');
-                i++;
-                continue;
-            }
-        }
-        result = t;
-        continue;
-    }
-    return result;
-}
-
-double long execute(double long c[])
-{
-    arrayStack<int> s;
-    double long t[2001] = {};
-    for (int i = 0; c[i] != mask('\n'); i++)
-    {
-        if (c[i] != mask('(') && c[i] != mask(')'))
-            continue;
-
-        if (c[i] == mask('('))
-        {
-            s.push(i);
-            continue;
-        }
-        if (c[i] == mask(')'))
-            if (!s.empty())
-            {
-                for (int j = 0; j < i - s.top(); j++)
-                {
-                    t[j] = c[s.top() + j + 1];
-                    c[s.top() + j] = mask(' ');
-                }
-                t[i - s.top() - 1] = mask('\n');
-                c[i] = mask(' ');
-                c[s.top()] = calculate(t) + '0';
-                s.pop();
-                continue;
-            }
-            else
-                exit(0);
-    }
-    return calculate(c);
+    x.output(out);
+    return out;
 }
 
 int main()
 {
-    int n, i;
-    cin >> n;
-    cin.get();
-    while (n != 0)
+    int D, n, opt, K;
+    cin >> D >> n;
+    HashTable<int, int> h(D);
+    pair<int, int> p;
+    for (int i = 0; i < n; i++)
     {
-        double long c[2001] = {};
-        for (i = 0; c[i - 1] != '\n'; i++)
-            c[i] = cin.get();
-        while (i != -1)
+        cin >> opt >> K;
+        switch (opt)
         {
-            switch ((int)c[i])
-            {
-            case '(':
-                c[i] = mask(c[i]);
-                break;
-            case ')':
-                c[i] = mask(c[i]);
-                break;
-            case '\n':
-                c[i] = mask(c[i]);
-                break;
-            case '/':
-                c[i] = mask(c[i]);
-                break;
-            case '*':
-                c[i] = mask(c[i]);
-                break;
-            case '+':
-                c[i] = mask(c[i]);
-                break;
-            case '-':
-                c[i] = mask(c[i]);
-                break;
-            default:
-                break;
-            }
-            i--;
+        case 0:
+            p.first = K;
+            h.insert(p);
+            break;
+        case 1:
+            p.first = K;
+            h.find(K);
+            break;
+        case 2:
+            p.first = K;
+            h.erase(K);
+            break;
+        default:
+            break;
         }
-        cout << fixed << setprecision(2) << execute(c) << endl;
-        n--;
     }
 }
